@@ -527,9 +527,7 @@ loadGSTimesheets = function () {
     sheet.getRange("A" + rowNo + ":" + String.fromCharCode(65 + this.scheme.columns.length - 1) + rowNo).setValues([data]);
 
     // set for total worktime - 対象時間
-    // sheet.getRange("E" + rowNo).setFormula('=IF(IF(IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ') >= 1/4, IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ') - 1/24,IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ')) = 0, "", IF(IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ') >= 1/4, IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ') - 1/24,IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ')))');
     sheet.getRange("E" + rowNo).setFormula('=IF(C' + rowNo + '<>"",IF(IF(IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ') >= 1/4, IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ') - 1/24,IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ')) = 0, "", IF(IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ') >= 1/4, IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + ') - 1/24,IF(B' + rowNo + '>C' + rowNo + ',C' + rowNo + '+1-B' + rowNo + ',C' + rowNo + '-B' + rowNo + '))),"")');
-    console.log('done');
 
     // set for weekdayOvertime - 残業時間（平日）
     sheet.getRange("G" + rowNo).setFormula('=IF(E' + rowNo + '<>"", IF(D' + rowNo + '="残業申請",IF(F' + rowNo + '="", IF(E' + rowNo + '>TIME(8,0,0),E' + rowNo + '-TIME(8,0,0),""),""),""),"")');
@@ -637,6 +635,33 @@ function confirmSignOut() {
   miyamoto.timesheets.confirmSignOut();
 }
 
+// Time-based trigger checkin and checkout
+function forgotCheckInOut() {
+  var miyamoto = init();
+  miyamoto.timesheets.forgotCheckInOut();
+}
+
+// create new trigger
+function forgotCheckInOutTrigger() {
+  deleteTriggerByName(['forgotCheckInOut'])
+  ScriptApp.newTrigger('forgotCheckInOut')
+    .timeBased()
+    .onMonthDay(1)
+    .atHour(9)
+    .create();
+}
+
+// delete trigger by name
+function deleteTriggerByName(functionNames = []) {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    var handlerFunction = triggers[i].getHandlerFunction();
+    if (functionNames.includes(handlerFunction)) {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+}
+
 
 // 初期化する
 function setUp() {
@@ -690,6 +715,8 @@ function setUp() {
       .everyDays(1)
       .atHour(22)
       .create();
+
+    forgotCheckInOutTrigger()
   }
 };
 
@@ -702,7 +729,6 @@ function migrate() {
   console.log("バージョンアップが完了しました。");
 }
 
-
 // function checkin(e) {
 //   var miyamoto = init();
 //   miyamoto.receiver.receiveMessage({ user_name: "nguyenducthang327", text: "出勤 8:20" });
@@ -712,41 +738,6 @@ function migrate() {
 // function checkout(e) {
 //   var miyamoto = init();
 //   miyamoto.receiver.receiveMessage({ user_name: "nguyenducthang327", text: "17:30 退勤" });
-// }
-
-// function testPayOff(e) {
-//   var miyamoto = init();
-
-//   // nghỉ 有給休暇
-//   miyamoto.receiver.receiveMessage({ user_name: "nguyenducthang327", text: "2024/09/28 有給休暇" });
-// }
-
-// function testcancelOff(e) {
-//   var miyamoto = init();
-
-//   // nghỉ 無給休暇
-//   miyamoto.receiver.receiveMessage({ user_name: "nguyenducthang327", text: " 2024/09/28 休暇取消" });
-// }
-
-// function testOTRequest(e) {
-//   var miyamoto = init();
-
-//   // nghỉ 無給休暇
-//   miyamoto.receiver.receiveMessage({ user_name: "nguyenducthang327", text: "残業申請" });
-// }
-
-// function testCancelOTRequest(e) {
-//   var miyamoto = init();
-
-//   // nghỉ 無給休暇
-//   miyamoto.receiver.receiveMessage({ user_name: "nguyenducthang327", text: "残業取消" });
-// }
-
-// function testOnWeekend() {
-//   var miyamoto = init();
-
-//   // nghỉ 無給休暇
-//   miyamoto.receiver.receiveMessage({ user_name: "nguyenducthang327", text: "出勤 2024/09/29 8:20" });
 // }
 
 // Slackのインタフェース
@@ -1054,6 +1045,73 @@ loadTimesheets = function (exports) {
     if (!_.isEmpty(users)) {
       this.responder.template("退勤確認", users.sort());
     }
+  };
+
+  // get time user forgot checkin, checkout
+  Timesheets.prototype.forgotCheckInOut = function (message) {
+    const today = new Date();
+    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    const yearAndMonth = yesterday.getFullYear() + '/' + Number(yesterday.getMonth() + 1);
+
+    const firstDay = new Date(yesterday.getFullYear(), yesterday.getMonth(), 1);
+    const lastDay = new Date(yesterday.getFullYear(), yesterday.getMonth() + 1, 0);
+
+    const allUsers = this.storage.getUsers();
+
+    var rowStart = -1;
+    var rowEnd = -1;
+
+    const holidaySheet = this.storage._getSheet('_holidays');
+    const holiday = holidaySheet.getRange('A2:A' + holidaySheet.getLastRow()).getValues();
+
+    allUsers.forEach((value, index) => {
+      const sheet = this.storage._getSheet(value);
+      var dayOff = DateUtils.parseWday(sheet.getRange("B2").getValue());
+
+      if (rowStart < 0 || rowEnd < 0) {
+        rowStart = this.storage._getRowNo(value, firstDay);
+        rowEnd = this.storage._getRowNo(value, lastDay);
+      }
+
+      var dateForgotCheckin = [];
+      var dateForgotCheckout = [];
+
+      var data = sheet.getRange('A' + rowStart + ':L' + rowEnd).getValues();
+      for (var i = 0; i < data.length; i++) {
+        let dayToCheck = yearAndMonth + '/' + Number(i + 1);
+
+        if (data[i][1] && data[i][2]) { // if has checkin and checkout
+          continue;
+        } else if (!data[i][1] && data[i][2]) {
+          dateForgotCheckin.push(dayToCheck);
+        } else if (data[i][1] && !data[i][2]) {
+          dateForgotCheckout.push(dayToCheck);
+        } else {
+          let isHoliday = holiday.find(function (date) {
+            return date[0].getTime() === new Date(dayToCheck).getTime();
+          })
+          if (_.contains(dayOff, DateUtils.toDate(new Date(dayToCheck)).getDay()) || isHoliday) {
+            continue;
+          } else if (data[i][3] === '有給休暇') {
+            continue;
+          }
+
+          dateForgotCheckin.push(dayToCheck);
+          dateForgotCheckout.push(dayToCheck);
+        }
+
+      }
+      if (dateForgotCheckin.length) {
+        let message = '<@' + value + '> Check-in時間をご入力ください。(' + dateForgotCheckin.join(', ') + ')';
+        this.responder.send(message);
+      }
+
+      if (dateForgotCheckout.length) {
+        let message = '<@' + value + '> Check-out時間をご入力ください。(' + dateForgotCheckout.join(', ') + ')';
+        this.responder.send(message);
+      }
+    })
+
   };
 
   return Timesheets;
