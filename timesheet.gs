@@ -445,7 +445,7 @@ loadGSTimesheets = function () {
       ],
       properties: [
         { name: 'DayOff', value: '土,日', comment: '← 月,火,水みたいに入力してください。アカウント停止のためには「全部」と入れてください。' },
-        { name: '有給残日数', value: '=COUNTA(UNIQUE(FILTER(J6:J, J6:J <> "")))-COUNTIF(D:D, "有給休暇")' },
+        { name: '有給残日数', value: '=COUNTA(UNIQUE(FILTER(J6:J, J6:J <> "")))-COUNTIF(D:D, "有給休暇")-(COUNTIF(D:D, "AM有給休暇") + COUNTIF(D:D, "PM有給休暇"))*0.5' },
       ],
     };
   };
@@ -839,8 +839,8 @@ loadTimesheets = function (exports) {
       ['confirmSignIn', /__confirmSignIn__/],
       ['confirmSignOut', /__confirmSignOut__/],
       // append new command
-      ['actionOffPaid', /(有給休暇)/],
-      ['actionOffUnPaid', /(無給休暇)/],
+      ['actionOffPaid', /(AM|PM).*(有給休暇)/],
+      ['actionOffUnPaid', /(AM|PM).*(無給休暇)/],
       ['actionOTRequest', /(残業申請)/],
       ['actionCancelOTRequest', /(残業取消)/],
     ];
@@ -899,13 +899,26 @@ loadTimesheets = function (exports) {
       var data = this.storage.get(username, dateObj);
       var sheet = this.storage._getSheet(username)
 
-      if (sheet.getRange("B3").getValue() <= 0) {
-        this.responder.template("リクエストが拒否されました", username, DateUtils.format("Y/m/d", dateObj));
-        return
-      }
-      if (!data.signOut || data.signOut === '-') {
-        this.storage.set(username, dateObj, { note: '有給休暇' });
-        this.responder.template("有給休暇", username, DateUtils.format("Y/m/d", dateObj));
+      let isHalfDay = message.match(/am|pm/i)
+
+      if (!isHalfDay) {
+        if (sheet.getRange("B3").getValue() < 1) {
+          this.responder.template("リクエストが拒否されました", username, DateUtils.format("Y/m/d", dateObj));
+          return
+        }
+        if (!data.signOut || data.signOut === '-') {
+          this.storage.set(username, dateObj, { note: '有給休暇' });
+          this.responder.template("有給休暇", username, DateUtils.format("Y/m/d", dateObj));
+        }
+      } else if (isHalfDay[0]) {
+        if (sheet.getRange("B3").getValue() < 0.5) {
+          this.responder.template("リクエストが拒否されました", username, DateUtils.format("Y/m/d", dateObj));
+          return
+        }
+        let desc = isHalfDay[0] + '有給休暇'
+        this.storage.set(username, dateObj, { note: desc });
+        let message = '<@' + username + '> ' + DateUtils.format("Y/m/d", dateObj) + 'を' + desc + 'として登録しました';
+        this.responder.send(message);
       }
     }
   };
@@ -915,9 +928,17 @@ loadTimesheets = function (exports) {
     if (this.date) {
       var dateObj = new Date(this.date[0], this.date[1] - 1, this.date[2]);
       var data = this.storage.get(username, dateObj);
-      if (!data.signOut || data.signOut === '-') {
-        this.storage.set(username, dateObj, { note: '無給休暇' });
-        this.responder.template("無給休暇", username, DateUtils.format("Y/m/d", dateObj));
+      let isHalfDay = message.match(/am|pm/i);
+      if (!isHalfDay) {
+        if (!data.signOut || data.signOut === '-') {
+          this.storage.set(username, dateObj, { note: '無給休暇' });
+          this.responder.template("無給休暇", username, DateUtils.format("Y/m/d", dateObj));
+        }
+      } else if (isHalfDay[0]) {
+        let desc = isHalfDay[0] + '無給休暇'
+        this.storage.set(username, dateObj, { note: desc });
+        let message = '<@' + username + '> ' + DateUtils.format("Y/m/d", dateObj) + 'を' + desc + 'として登録しました';
+        this.responder.send(message);
       }
     }
   };
