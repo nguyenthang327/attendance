@@ -839,8 +839,8 @@ loadTimesheets = function (exports) {
       ['confirmSignIn', /__confirmSignIn__/],
       ['confirmSignOut', /__confirmSignOut__/],
       // append new command
-      ['actionOffPaid', /(AM|PM).*(有給休暇)/],
-      ['actionOffUnPaid', /(AM|PM).*(無給休暇)/],
+      ['actionOffPaid', /((AM|PM).*(有給休暇))|(有給休暇)/],
+      ['actionOffUnPaid', /((AM|PM).*(無給休暇))|(無給休暇)/],
       ['actionOTRequest', /(残業申請)/],
       ['actionCancelOTRequest', /(残業取消)/],
     ];
